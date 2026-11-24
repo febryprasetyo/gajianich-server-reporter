@@ -15,11 +15,29 @@ export async function runWeeklyAuditJob() {
         console.error(`Gagal membuat laporan untuk server ${s.hostname}:`, err?.message || err);
       }
     }
-  } finally {
+  } catch (err: any) {
+    console.error(`[GAJIANICH Reporter Scheduler] Terjadi kesalahan:`, err?.message || err);
+  }
+}
+
+export async function startReporterService() {
+  const isDaemon = process.argv.includes('--daemon') || process.env.REPORTER_DAEMON === 'true';
+  const intervalMs = Math.max(60000, Number(process.env.REPORTER_INTERVAL_MS) || 3600000);
+
+  console.log(`[GAJIANICH Reporter] Inisialisasi service reporter audit server...`);
+  await runWeeklyAuditJob();
+
+  if (isDaemon) {
+    console.log(`[GAJIANICH Reporter Daemon] Berjalan dalam mode daemon (interval: ${intervalMs / 1000}s). Menunggu siklus berikutnya...`);
+    setInterval(async () => {
+      await runWeeklyAuditJob();
+    }, intervalMs);
+  } else {
+    console.log(`[GAJIANICH Reporter] Pekerjaan selesai.`);
     await getDbPool().end();
   }
 }
 
-if (process.argv[1] && process.argv[1].endsWith('index.ts') || process.argv[1]?.endsWith('index.js')) {
-  void runWeeklyAuditJob();
+if (process.argv[1] && (process.argv[1].endsWith('index.ts') || process.argv[1]?.endsWith('index.js'))) {
+  void startReporterService();
 }

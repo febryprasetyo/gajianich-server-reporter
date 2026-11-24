@@ -101,7 +101,7 @@ export async function aggregateWeeklyData(serverIdentifier: string | number): Pr
   const startDateStr = sevenDaysAgo.toISOString().split('T')[0];
   const periodWeek = getIsoWeek(now);
 
-  const aggRows = await queryDb(
+  let aggRows = await queryDb(
     `SELECT 
       COUNT(*) as sample_count,
       COALESCE(AVG(CAST(cpu_usage_pct AS numeric)), 0) as avg_cpu,
@@ -117,8 +117,37 @@ export async function aggregateWeeklyData(serverIdentifier: string | number): Pr
     [serverId]
   );
 
-  const agg = aggRows[0] || {};
-  const sampleCount = Number(agg.sample_count) || 0;
+  let agg = aggRows[0] || {};
+  let sampleCount = Number(agg.sample_count) || 0;
+  let sampleWindowMax: Date | null = null;
+
+  // If no samples in strict calendar 7-days, inspect latest available recorded window
+  if (sampleCount === 0) {
+    const latestWindowRows = await queryDb(
+      `SELECT MAX(recorded_at) as latest FROM server_metric_samples WHERE server_id = $1`,
+      [serverId]
+    );
+    if (latestWindowRows[0]?.latest) {
+      sampleWindowMax = new Date(latestWindowRows[0].latest);
+      aggRows = await queryDb(
+        `SELECT 
+          COUNT(*) as sample_count,
+          COALESCE(AVG(CAST(cpu_usage_pct AS numeric)), 0) as avg_cpu,
+          COALESCE(MAX(CAST(cpu_usage_pct AS numeric)), 0) as peak_cpu,
+          COALESCE(AVG(CAST(ram_usage_pct AS numeric)), 0) as avg_ram,
+          COALESCE(MAX(CAST(ram_usage_pct AS numeric)), 0) as peak_ram,
+          COALESCE(AVG(CAST(load_avg_1m AS numeric)), 0) as avg_load,
+          COALESCE(AVG(CAST(disk_usage_pct AS numeric)), 0) as avg_disk,
+          COALESCE(AVG(net_rx_bps), 0) as avg_rx,
+          COALESCE(AVG(net_tx_bps), 0) as avg_tx
+        FROM server_metric_samples
+        WHERE server_id = $1 AND recorded_at >= $2::timestamp - INTERVAL '7 days' AND recorded_at <= $2::timestamp`,
+        [serverId, sampleWindowMax.toISOString()]
+      );
+      agg = aggRows[0] || {};
+      sampleCount = Number(agg.sample_count) || 0;
+    }
+  }
 
   let avgCpuPct = Number(Number(agg.avg_cpu || 0).toFixed(1));
   let peakCpuPct = Number(Number(agg.peak_cpu || 0).toFixed(1));
@@ -132,17 +161,21 @@ export async function aggregateWeeklyData(serverIdentifier: string | number): Pr
   let endDiskPct = 0;
 
   if (sampleCount > 0) {
+    const whereClause = sampleWindowMax
+      ? `server_id = $1 AND recorded_at >= '${new Date(sampleWindowMax.getTime() - 7 * 86400000).toISOString()}'::timestamp AND recorded_at <= '${sampleWindowMax.toISOString()}'::timestamp`
+      : `server_id = $1 AND recorded_at >= NOW() - INTERVAL '7 days'`;
+
     const startDiskRows = await queryDb(
       `SELECT CAST(disk_usage_pct AS numeric) as disk_pct
        FROM server_metric_samples
-       WHERE server_id = $1 AND recorded_at >= NOW() - INTERVAL '7 days'
+       WHERE ${whereClause}
        ORDER BY recorded_at ASC LIMIT 1`,
       [serverId]
     );
     const endDiskRows = await queryDb(
       `SELECT CAST(disk_usage_pct AS numeric) as disk_pct
        FROM server_metric_samples
-       WHERE server_id = $1 AND recorded_at >= NOW() - INTERVAL '7 days'
+       WHERE ${whereClause}
        ORDER BY recorded_at DESC LIMIT 1`,
       [serverId]
     );
@@ -150,7 +183,7 @@ export async function aggregateWeeklyData(serverIdentifier: string | number): Pr
     startDiskPct = Number(Number(startDiskRows[0]?.disk_pct || 0).toFixed(1));
     endDiskPct = Number(Number(endDiskRows[0]?.disk_pct || 0).toFixed(1));
   } else {
-    // If no samples in 7-day window, extract current real snapshot from server row
+    // If no samples in database at all, extract current real snapshot from server row
     avgCpuPct = Number(parseFloat(String(s.cpu_usage_pct || '0')).toFixed(1));
     peakCpuPct = avgCpuPct;
     avgRamPct = Number(parseFloat(String(s.ram_usage_pct || '0')).toFixed(1));

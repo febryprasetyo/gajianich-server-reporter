@@ -31,6 +31,17 @@ export async function archiveWeeklyReport(
   fs.writeFileSync(pdfFilePath, pdfBuffer);
   const fileSizeBytes = pdfBuffer.length;
 
+  // Sinkronisasi otomatis ke direktori backend data/reports agar bisa diakses container backend
+  const backendDataReportsDir = '/home/fastpec/code/ams-app/backend/data/reports';
+  try {
+    if (!fs.existsSync(backendDataReportsDir)) {
+      fs.mkdirSync(backendDataReportsDir, { recursive: true });
+    }
+    fs.writeFileSync(path.join(backendDataReportsDir, pdfFileName), pdfBuffer);
+  } catch {
+    // Non-fatal if permission or path differs
+  }
+
   const insertSql = `
     INSERT INTO server_weekly_reports (
       server_id,

@@ -25,7 +25,10 @@ export async function archiveWeeklyReport(
     fs.mkdirSync(storageDir, { recursive: true });
   }
 
-  const pdfFileName = `Laporan-Mingguan-${data.server.code}-${data.period.week}.pdf`;
+  const pdfFileName =
+    data.scopeType === 'CLUSTER'
+      ? `Laporan-Mingguan-Cluster-Fleet-${data.period.week}.pdf`
+      : `Laporan-Mingguan-${data.server.code}-${data.period.week}.pdf`;
   const pdfFilePath = path.join(storageDir, pdfFileName);
 
   fs.writeFileSync(pdfFilePath, pdfBuffer);
@@ -45,30 +48,53 @@ export async function archiveWeeklyReport(
   const insertSql = `
     INSERT INTO server_weekly_reports (
       server_id,
+      scope_type,
       period_week,
       start_date,
       end_date,
       status,
+      sla_percent,
       executive_summary,
       incident_rca,
+      service_availability,
+      resource_metrics,
+      database_middleware,
+      security_audit,
+      backup_dr,
+      incidents_maintenance,
+      action_items,
       recommendations,
       pdf_file_name,
       pdf_file_path,
       file_size_bytes,
       generated_by
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+      $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+    )
     RETURNING id
   `;
 
+  const serverIdVal = data.scopeType === 'CLUSTER' || !data.server.id ? null : data.server.id;
+
   const rows = await queryDb(insertSql, [
-    data.server.id,
+    serverIdVal,
+    data.scopeType || 'NODE',
     data.period.week,
     data.period.startDate,
     data.period.endDate,
     analysis.overallStatus,
+    analysis.slaPercent || '99.90',
     analysis.executiveSummary,
     analysis.incidentRca,
-    JSON.stringify(analysis.recommendations),
+    JSON.stringify(analysis.serviceAvailability || {}),
+    JSON.stringify(analysis.resourceMetrics || {}),
+    JSON.stringify(analysis.databaseMiddleware || {}),
+    JSON.stringify(analysis.securityAudit || {}),
+    JSON.stringify(analysis.backupDr || {}),
+    JSON.stringify(analysis.incidentsMaintenance || []),
+    JSON.stringify(analysis.actionItems || []),
+    JSON.stringify(analysis.recommendations || []),
     pdfFileName,
     pdfFilePath,
     fileSizeBytes,

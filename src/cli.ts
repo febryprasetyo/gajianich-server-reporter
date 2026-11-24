@@ -1,4 +1,4 @@
-import { aggregateWeeklyData } from './aggregator/dataAggregator.js';
+import { aggregateWeeklyData, aggregateClusterWeeklyData } from './aggregator/dataAggregator.js';
 import { analyzeWeeklyMetrics } from './ai/geminiAnalyst.js';
 import { renderHtmlTemplate } from './generator/template.js';
 import { renderPdfFromHtml } from './generator/pdfRenderer.js';
@@ -20,12 +20,12 @@ export async function generateReportForServer(
   console.log(`   ✓ Periode: ${data.period.week} (${data.period.startDate} s/d ${data.period.endDate})`);
   console.log(`   ✓ Sampel telemetri: ${data.metrics.sampleCount} rekaman`);
 
-  console.log(`-> 2. Menjalankan analisis cerdas via Gemini 2.5 Flash (atau Fallback)...`);
+  console.log(`-> 2. Menjalankan analisis audit 8 bagian (Gemini 2.5 Flash / Rule-Based)...`);
   const analysis = await analyzeWeeklyMetrics(data);
-  console.log(`   ✓ Status Audit: ${analysis.overallStatus}`);
+  console.log(`   ✓ Status Audit: ${analysis.overallStatus} (SLA: ${analysis.slaPercent}%)`);
   console.log(`   ✓ Ringkasan: ${analysis.executiveSummary.slice(0, 80)}...`);
 
-  console.log(`-> 3. Merender template HTML & CSS Emerald Enterprise...`);
+  console.log(`-> 3. Merender template HTML & CSS Sophos Enterprise...`);
   const html = renderHtmlTemplate(data, analysis);
 
   console.log(`-> 4. Men-generate dokumen PDF A4 via Puppeteer Headless...`);
@@ -42,9 +42,43 @@ export async function generateReportForServer(
   return archive;
 }
 
+export async function generateReportForCluster(generatedBy = 'CLI_MANUAL_TRIGGER') {
+  console.log(`\n======================================================`);
+  console.log(`[GAJIANICH Reporter] Memulai pembuatan laporan mingguan CLUSTER`);
+  console.log(`Cakupan: Seluruh Node Server (Cluster Fleet)`);
+  console.log(`======================================================`);
+
+  console.log(`-> 1. Ekstraksi dan agregasi data cluster 7 hari dari PostgreSQL...`);
+  const data = await aggregateClusterWeeklyData();
+  console.log(`   ✓ Data berhasil diekstrak untuk cluster: ${data.server.specs}`);
+  console.log(`   ✓ Periode: ${data.period.week} (${data.period.startDate} s/d ${data.period.endDate})`);
+
+  console.log(`-> 2. Menjalankan analisis audit 8 bagian (Gemini 2.5 Flash / Rule-Based)...`);
+  const analysis = await analyzeWeeklyMetrics(data);
+  console.log(`   ✓ Status Audit: ${analysis.overallStatus} (SLA: ${analysis.slaPercent}%)`);
+  console.log(`   ✓ Ringkasan: ${analysis.executiveSummary.slice(0, 80)}...`);
+
+  console.log(`-> 3. Merender template HTML & CSS Sophos Enterprise...`);
+  const html = renderHtmlTemplate(data, analysis);
+
+  console.log(`-> 4. Men-generate dokumen PDF A4 via Puppeteer Headless...`);
+  const pdfBuffer = await renderPdfFromHtml(html);
+  console.log(`   ✓ PDF berhasil dibuat (${(pdfBuffer.length / 1024).toFixed(1)} KB)`);
+
+  console.log(`-> 5. Menyimpan file PDF fisik dan mencatat metadata ke database...`);
+  const archive = await archiveWeeklyReport(data, analysis, pdfBuffer, generatedBy);
+  console.log(`   ✓ Tersimpan di: ${archive.pdfFilePath}`);
+  console.log(`   ✓ ID Database: ${archive.reportId}`);
+  console.log(`======================================================`);
+  console.log(`[GAJIANICH Reporter] Laporan cluster selesai dengan sukses!\n`);
+
+  return archive;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   let serverArg = '';
+  const isCluster = args.includes('--cluster');
 
   for (const arg of args) {
     if (arg.startsWith('--server=')) {
@@ -53,7 +87,9 @@ async function main() {
   }
 
   try {
-    if (serverArg) {
+    if (isCluster) {
+      await generateReportForCluster('CLI_ON_DEMAND');
+    } else if (serverArg) {
       await generateReportForServer(serverArg, 'CLI_ON_DEMAND');
     } else {
       console.log(`[GAJIANICH Reporter] Mode All Servers: Mencari semua server aktif di database...`);
@@ -83,6 +119,6 @@ async function main() {
   }
 }
 
-if (process.argv[1] && process.argv[1].endsWith('cli.ts') || process.argv[1]?.endsWith('cli.js')) {
+if (process.argv[1] && (process.argv[1].endsWith('cli.ts') || process.argv[1]?.endsWith('cli.js'))) {
   void main();
 }

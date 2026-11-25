@@ -1,6 +1,6 @@
 {
   "name": "gajianich-server-reporter",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Weekly Health & Security Audit Report Generator for GAJIANICH Infrastructure",
   "main": "dist/index.js",
   "scripts": {

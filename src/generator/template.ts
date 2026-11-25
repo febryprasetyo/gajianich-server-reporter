@@ -19,51 +19,43 @@ export function renderHtmlTemplate(
       ? '#ca8a04' // amber-600
       : '#dc2626'; // red-600
 
-  // 1. Services Table rows (Sophos Style - Top Key Services prioritized)
+  // 1. Services Table rows (Sophos Style - Full list without truncation)
   const prioritizedServices = [...data.services].sort((a, b) => (b.restarts || 0) - (a.restarts || 0));
-  const displayServices = prioritizedServices.slice(0, isCluster ? 3 : 6);
-  const remainingServicesCount = data.services.length - displayServices.length;
 
   const servicesHtml =
-    displayServices.length > 0
-      ? displayServices
+    prioritizedServices.length > 0
+      ? prioritizedServices
           .map((s, idx) => {
             const isOk = s.status === 'active' || s.status === 'online';
             return `
         <tr style="background-color: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-          <td style="padding: 5px 8px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f172a; font-size: 10.5px;">
+          <td style="padding: 3.5px 6px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f172a; font-size: 9.5px;">
             ${s.name}
           </td>
-          <td style="padding: 5px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">
+          <td style="padding: 3.5px 6px; border-bottom: 1px solid #e2e8f0; text-align: center;">
             <span class="risk-pill ${isOk ? 'risk-pill-1' : 'risk-pill-5'}">
               ${isOk ? '1' : '5'}
             </span>
           </td>
-          <td style="padding: 5px 8px; border-bottom: 1px solid #e2e8f0; color: #334155; text-transform: uppercase; font-size: 9.5px; font-weight: 700;">
+          <td style="padding: 3.5px 6px; border-bottom: 1px solid #e2e8f0; color: #334155; text-transform: uppercase; font-size: 9px; font-weight: 700;">
             ${s.category}
           </td>
-          <td style="padding: 5px 8px; border-bottom: 1px solid #e2e8f0; color: ${s.restarts > 0 ? '#b91c1c' : '#334155'}; font-weight: 700; font-size: 10.5px;">
-            <span style="min-width: 20px; display: inline-block;">${s.restarts}</span>
+          <td style="padding: 3.5px 6px; border-bottom: 1px solid #e2e8f0; color: ${s.restarts > 0 ? '#b91c1c' : '#334155'}; font-weight: 700; font-size: 9.5px;">
+            <span style="min-width: 18px; display: inline-block;">${s.restarts}</span>
             ${renderMeterBar(Math.min(100, s.restarts * 25), s.restarts > 0 ? '#ea580c' : '#cbd5e1', 25)}
           </td>
-          <td style="padding: 5px 8px; border-bottom: 1px solid #e2e8f0; color: #334155; font-size: 10.5px; font-weight: 500;">
+          <td style="padding: 3.5px 6px; border-bottom: 1px solid #e2e8f0; color: #334155; font-size: 9.5px; font-weight: 500;">
             ${s.uptime}
           </td>
         </tr>`;
           })
-          .join('') +
-        (remainingServicesCount > 0
-          ? `<tr><td colspan="5" style="padding: 5px 8px; border-bottom: 1px solid #e2e8f0; font-size: 10px; color: #475569; background-color: #f8fafc; font-weight: 600;">
-              + ${remainingServicesCount} kontainer & proses pendukung lainnya beroperasi aktif dengan status online (Zero Restarts).
-            </td></tr>`
-          : '')
+          .join('')
       : `<tr><td colspan="5" style="padding: 10px; text-align: center; color: #64748b; font-size: 10.5px; background-color: #f8fafc;">Tidak ada layanan atau kontainer spesifik yang tercatat.</td></tr>`;
 
   // 2. Backups Table rows (Sophos Style)
   const backupsHtml =
     data.backups.length > 0
       ? data.backups
-          .slice(0, 8)
           .map((b, idx) => `
         <tr style="background-color: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
           <td style="padding: 6.5px 10px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f172a; font-size: 11px;">
@@ -253,6 +245,8 @@ export function renderHtmlTemplate(
       display: flex;
       align-items: center;
       gap: 7px;
+      page-break-after: avoid;
+      break-after: avoid;
     }
     .section-title span.badge {
       font-size: 9.5px;
@@ -280,6 +274,9 @@ export function renderHtmlTemplate(
       margin-bottom: 8px;
       font-size: 10.5px;
       page-break-inside: auto;
+    }
+    .data-table thead {
+      display: table-header-group;
     }
     .data-table tr {
       page-break-inside: avoid;
@@ -736,12 +733,6 @@ export function renderHtmlTemplate(
 
 
   <!-- ==================== BAGIAN 4: KINERJA DATABASE & MIDDLEWARE ==================== -->
-  <div class="page-break"></div>
-  <div class="running-header">
-    <span>GAJIANICH ENTERPRISE INFRASTRUCTURE AUDIT</span>
-    <span>TARGET: ${data.server.code} • PERIODE: ${data.period.week}</span>
-  </div>
-
   <div style="margin-bottom: 14px;">
     <h3 class="section-title"><span class="badge">04</span> Kinerja Database & Komponen Middleware</h3>
     <div class="section-intro">
@@ -933,13 +924,6 @@ export function renderHtmlTemplate(
     </p>
   </div>
 
-
-  <!-- ==================== HALAMAN 4: INSIDEN & ACTION ITEMS ==================== -->
-  <div class="page-break"></div>
-  <div class="running-header">
-    <span>GAJIANICH ENTERPRISE INFRASTRUCTURE AUDIT</span>
-    <span>TARGET: ${data.server.code} • PERIODE: ${data.period.week}</span>
-  </div>
 
   <!-- ==================== BAGIAN 7: REKAPITULASI INSIDEN ==================== -->
   <div style="margin-bottom: 14px;">

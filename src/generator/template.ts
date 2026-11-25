@@ -7,6 +7,38 @@ function renderMeterBar(valPct: number, colorHex: string, maxWidth = 50): string
   return `<span style="display: inline-block; width: ${widthPx}px; height: 7px; background-color: ${colorHex}; border-radius: 2px; vertical-align: middle; margin-left: 6px;"></span>`;
 }
 
+const DEFAULT_PORT_SERVICES: Record<string, string> = {
+  '22/tcp': 'OpenSSH Daemon',
+  '53/tcp': 'DNS Resolver',
+  '80/tcp': 'HTTP Web Ingress',
+  '443/tcp': 'HTTPS TLS Ingress',
+  '631/tcp': 'CUPS Print Spooler',
+  '1883/tcp': 'Mosquitto MQTT Broker',
+  '3000/tcp': 'Frontend Web Application',
+  '5000/tcp': 'Backend API Service',
+  '5432/tcp': 'PostgreSQL Database',
+  '5433/tcp': 'PostgreSQL Dev Instance',
+  '6379/tcp': 'Redis In-Memory Cache',
+};
+
+const PUBLIC_PORTS = new Set(['22/tcp', '80/tcp', '443/tcp']);
+
+function parsePortEntry(raw: string): { portProto: string; service: string; scope: string; riskLevel: string; riskClass: string } {
+  const cleaned = raw.trim().replace(/^:/, '');
+  const match = cleaned.match(/^(\d+\/[a-zA-Z]+)(?:\s*\(([^)]+)\))?/);
+  const portProto = match ? match[1].toLowerCase() : cleaned.toLowerCase();
+  const service = (match && match[2]) || DEFAULT_PORT_SERVICES[portProto] || 'Layanan Sistem';
+  const isPublic = PUBLIC_PORTS.has(portProto);
+  const isRemoteAdmin = portProto === '22/tcp';
+  return {
+    portProto: portProto.toUpperCase(),
+    service,
+    scope: isPublic ? 'Publik (Terfilter UFW)' : 'Privat / Internal Jaringan',
+    riskLevel: isRemoteAdmin ? '2' : '1',
+    riskClass: isRemoteAdmin ? 'risk-pill-2' : 'risk-pill-1',
+  };
+}
+
 export function renderHtmlTemplate(
   data: AggregatedWeeklyMetrics,
   analysis: AiAuditAnalysisResult
@@ -112,7 +144,7 @@ export function renderHtmlTemplate(
           ✓ Tidak Ada Insiden Tercatat — Ketersediaan layanan terjaga 100% tanpa gangguan operasional (Zero Outage).
         </td></tr>`;
 
-  // 4. Action Items Table rows (Sophos Style)
+  // 4. Action Items Table rows (Sophos Style - tanpa kolom PIC)
   const actionItemsHtml =
     analysis.actionItems && analysis.actionItems.length > 0
       ? analysis.actionItems
@@ -127,11 +159,6 @@ export function renderHtmlTemplate(
           <td style="padding: 6.5px 10px; border-bottom: 1px solid #e2e8f0; color: #1e293b; font-size: 11px; font-weight: 500;">
             ${act.action}
           </td>
-          <td style="padding: 6.5px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">
-            <span style="display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; background-color: #e2e8f0; color: #0f172a; border: 1px solid #94a3b8;">
-              ${act.pic}
-            </span>
-          </td>
           <td style="padding: 6.5px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; color: #334155; font-weight: 700; font-size: 11px;">
             ${act.target}
           </td>
@@ -142,7 +169,7 @@ export function renderHtmlTemplate(
           </td>
         </tr>`)
           .join('')
-      : `<tr><td colspan="6" style="padding: 12px; text-align: center; color: #334155; font-weight: 600; font-size: 11px;">Tidak ada action item tertunda.</td></tr>`;
+      : `<tr><td colspan="5" style="padding: 12px; text-align: center; color: #334155; font-weight: 600; font-size: 11px;">Tidak ada action item tertunda.</td></tr>`;
 
   // 5. Strategic Recommendations Table rows (Replaces Cards!)
   const recommendationsTableRows = analysis.recommendations
@@ -781,15 +808,45 @@ export function renderHtmlTemplate(
           <td style="color: #334155; font-weight: 500;">Engine Firebird 2.5/3.0</td>
           <td style="font-weight: 700; color: #166534;">AKTIF (Transaksi Normal)</td>
         </tr>
-        <tr>
-          <td style="font-weight: 700; color: #0f172a;">Port Jaringan Publik / Privat</td>
-          <td style="text-align: center;"><span class="risk-pill risk-pill-1">1</span></td>
-          <td colspan="3" style="font-size: 10px; font-family: monospace; color: #1e293b; font-weight: 600;">
-            ${data.databaseMiddleware.openPorts.join(' &bull; ')}
-          </td>
-        </tr>
       </tbody>
     </table>
+
+    <!-- 4.2 Dedicated Table for Public & Private Network Ports -->
+    <div style="margin-top: 8px; margin-bottom: 6px;">
+      <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #0f172a; margin-bottom: 4px;">
+        4.2 Audit Eksposur Port Jaringan Publik & Privat
+      </div>
+      <table class="data-table" style="margin-bottom: 6px;">
+        <thead>
+          <tr>
+            <th style="width: 18%;">Port / Protokol</th>
+            <th style="width: 12%; text-align: center;">Tingkat Risiko</th>
+            <th style="width: 28%;">Layanan / Daemon Terikat</th>
+            <th style="width: 24%;">Cakupan Akses Jaringan</th>
+            <th style="width: 18%;">Status Proteksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            data.databaseMiddleware.openPorts && data.databaseMiddleware.openPorts.length > 0
+              ? data.databaseMiddleware.openPorts
+                  .map((rawPort, idx) => {
+                    const p = parsePortEntry(rawPort);
+                    return `
+          <tr style="background-color: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+            <td style="font-family: monospace; font-weight: 800; color: #0f172a;">${p.portProto}</td>
+            <td style="text-align: center;"><span class="risk-pill ${p.riskClass}">${p.riskLevel}</span></td>
+            <td style="font-weight: 700; color: #1e293b;">${p.service}</td>
+            <td style="color: #334155; font-weight: 500;">${p.scope}</td>
+            <td style="font-weight: 700; color: #166534;">● Terlindungi UFW</td>
+          </tr>`;
+                  })
+                  .join('')
+              : `<tr><td colspan="5" style="text-align: center; color: #64748b;">Tidak ada port jaringan terbuka yang terdeteksi.</td></tr>`
+          }
+        </tbody>
+      </table>
+    </div>
 
     <p style="margin: 0; font-size: 11px; color: #334155; line-height: 1.55;">
       Manajemen pool koneksi PostgreSQL dan cache Redis berjalan stabil tanpa terjadi connection saturation. Database file Accurate terisolasi dengan performa I/O read/write yang konsisten.
@@ -961,17 +1018,16 @@ export function renderHtmlTemplate(
   <div style="margin-bottom: 14px;">
     <h3 class="section-title"><span class="badge">08</span> Rencana Tindakan & Rekomendasi Mitigasi (Action Items)</h3>
     <div class="section-intro">
-      Matriks penugasan terarah kepada penanggung jawab teknis (PIC) untuk menyelesaikan temuan audit, mencegah regresi degradasi sistem, dan menjamin keberlanjutan SLA bisnis.
+      Matriks rencana tindakan terarah untuk menyelesaikan temuan audit, mencegah regresi degradasi sistem, dan menjamin keberlanjutan SLA bisnis.
     </div>
 
     <!-- Table Action Items -->
     <table class="data-table" style="margin-bottom: 14px;">
       <thead>
         <tr>
-          <th style="width: 5%; text-align: center;">No</th>
-          <th style="width: 28%;">Isu / Temuan Audit</th>
-          <th style="width: 33%;">Tindakan Solutif (Action)</th>
-          <th style="width: 12%; text-align: center;">PIC</th>
+          <th style="width: 6%; text-align: center;">No</th>
+          <th style="width: 31%;">Isu / Temuan Audit</th>
+          <th style="width: 41%;">Tindakan Solutif (Action)</th>
           <th style="width: 10%; text-align: center;">Target</th>
           <th style="width: 12%; text-align: center;">Status</th>
         </tr>

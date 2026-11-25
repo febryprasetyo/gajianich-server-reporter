@@ -22,10 +22,10 @@ export async function renderPdfFromHtml(html: string): Promise<Buffer> {
       printBackground: true,
       preferCSSPageSize: true,
       margin: {
-        top: '15mm',
-        right: '15mm',
-        bottom: '15mm',
-        left: '15mm',
+        top: '8mm',
+        right: '12mm',
+        bottom: '8mm',
+        left: '12mm',
       },
     });
 

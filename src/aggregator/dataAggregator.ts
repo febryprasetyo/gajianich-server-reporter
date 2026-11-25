@@ -92,6 +92,27 @@ export interface AggregatedWeeklyMetrics {
     description: string;
     resolution: string;
   }>;
+  clusterNodes?: Array<{
+    id: number;
+    hostname: string;
+    name: string;
+    ipAddress: string;
+    status: string;
+    roleBadge: string;
+    serverType: string;
+    os: string;
+    specs: string;
+    uptimeSeconds: number;
+    uptimeFormatted: string;
+    cpuPct: number;
+    ramPct: number;
+    ramTotalGb: number;
+    ramUsedGb: number;
+    diskPct: number;
+    diskTotalGb: number;
+    diskUsedGb: number;
+    servicesCount: number;
+  }>;
 }
 
 function getIsoWeek(date: Date): string {
@@ -494,6 +515,47 @@ export async function aggregateClusterWeeklyData(): Promise<AggregatedWeeklyMetr
     completedAt: b.completed_at ? new Date(b.completed_at).toISOString() : '',
   }));
 
+  const clusterNodes = allServers.map((s) => {
+    const cpu = parseFloat(String(s.cpu_usage_pct || '0'));
+    const ram = parseFloat(String(s.ram_usage_pct || '0'));
+    const disk = parseFloat(String(s.disk_usage_pct || '0'));
+    const ramTotGb = Number((Number(s.ram_total_bytes || 0) / 1024 ** 3).toFixed(1)) || 16;
+    const ramUsdGb = Number((Number(s.ram_used_bytes || 0) / 1024 ** 3).toFixed(1)) || Number(((ramTotGb * ram) / 100).toFixed(1));
+    const diskTotGb = Math.round(Number(s.disk_total_bytes || 0) / 1024 ** 3) || 512;
+    const diskUsdGb = Math.round(Number(s.disk_used_bytes || 0) / 1024 ** 3) || Math.round((diskTotGb * disk) / 100);
+    const upSec = Number(s.uptime_seconds || 0);
+
+    let svcCount = 0;
+    try {
+      const u = typeof s.unified_services === 'string' ? JSON.parse(s.unified_services) : s.unified_services;
+      if (Array.isArray(u)) svcCount = u.length;
+    } catch {
+      // ignore
+    }
+
+    return {
+      id: Number(s.id),
+      hostname: s.hostname || s.name,
+      name: s.name || s.hostname,
+      ipAddress: s.ip_address || '-',
+      status: s.status || 'Online',
+      roleBadge: s.role_badge || 'WORKER',
+      serverType: s.server_type || 'Node',
+      os: s.os || 'Linux',
+      specs: s.specs || '-',
+      uptimeSeconds: upSec,
+      uptimeFormatted: formatUptime(upSec),
+      cpuPct: cpu,
+      ramPct: ram,
+      ramTotalGb: ramTotGb,
+      ramUsedGb: ramUsdGb,
+      diskPct: disk,
+      diskTotalGb: diskTotGb,
+      diskUsedGb: diskUsdGb,
+      servicesCount: svcCount,
+    };
+  });
+
   const incidents: AggregatedWeeklyMetrics['incidents'] = [];
   let incCounter = 1;
   for (const svc of allServices) {
@@ -583,5 +645,6 @@ export async function aggregateClusterWeeklyData(): Promise<AggregatedWeeklyMetr
     },
     backups,
     incidents,
+    clusterNodes,
   };
 }
